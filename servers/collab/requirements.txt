@@ -1,0 +1,6 @@
+httpx
+httpx-ws
+fastapi
+uvicorn
+pycrdt
+pydantic

@@ -1,5 +1,7 @@
 import asyncio
 import base64
+from datetime import datetime, timezone, timedelta
+from enum import Enum
 from functools import partial
 import json
 import logging
@@ -11,7 +13,12 @@ import contextlib
 import os
 from typing import Dict, Any, Optional, Tuple, Callable
 from asyncio import Queue
+from uuid import uuid4
+
+from .scenetalk_state import apply_remote_update
+from .event_types import EventType
 from .model_db import find_by_name
+#from .scenetalk_state import apply_remote_updates
 
 # Add the 'libs' folder to the Python path
 libs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "lib")
@@ -26,12 +33,101 @@ logging.basicConfig(level=logging.INFO)
 
 logger = logging.getLogger("scenetalk_client")
 
+ping_interval_seconds = 15
 
 def random_obj_name(model_type) -> str:
     """Generate a random object name."""
     rand_str = ''.join(secrets.choice(string.ascii_lowercase) for i in range(10))
     obj_name = f"{model_type.upper()}_{rand_str}"
     return obj_name
+
+
+async def process_message(client, response: object) -> bool:
+    """Generic SceneTalk response processor"""
+    op_type = response['op']
+    # logger.info(f"process_response: {op_type}")
+    if op_type == "update":
+        apply_remote_update(response["data"])
+    elif op_type == "error":
+        await client.event_queue.put((EventType.ERROR, response["data"]))
+    elif op_type == "geometry":
+        # TODO - decide on model or schema or job def language
+        await client.event_queue.put((EventType.GEOMETRY,
+                                    client.current_model_type,
+                                    client.current_object_name or random_obj_name(),
+                                    client.current_inputs,
+                                    response,
+                                    client.current_object_schema))
+    completed = op_type == "automation" and \
+        response["data"] == "end"
+    return completed
+
+
+async def client_task(client):
+    """Client task to handle WebSocket events."""
+    ws = client.websocket
+    shutdown_event = client._shutdown_event
+    last_ping = None
+    while not shutdown_event.is_set():
+        try:
+            text_message = await ws.receive_text(timeout=.5)
+            print("received event", text_message)
+        except asyncio.TimeoutError:
+            continue
+        
+        try: 
+            obj = json.loads(text_message)
+            await process_message(client, obj)
+        except json.JSONDecodeError as e:
+            logger.exception(f"invalid JSON message: {text_message}")
+            continue
+        except Exception as e:
+            logger.exception(f"error processing message: {text_message}")
+            continue
+
+        # handle ping/pong keepalive
+        try:
+            now = datetime.now(timezone.utc)
+            if not last_ping or now - last_ping > timedelta(seconds=ping_interval_seconds):
+                print("sending ping")
+                ping_sent_time = asyncio.get_event_loop().time()
+                pong_callback = await ws.ping()
+                result = await pong_callback.wait()
+                if result is None:
+                    await client.disconnect("ping timed out")
+                elapsed = asyncio.get_event_loop().time() - ping_sent_time
+                print("received pong", elapsed)
+        except WebSocketNetworkError as e:
+            msg = f"WebSocket error: {e}"
+            logger.exception()
+            await client.disconnect(msg)
+            break
+        except Exception as e:
+            logger.exception(f"Error in client task: {e}")
+
+class CookRequest:
+    def __init__(self,
+                 model_type: str,
+                 obj_name: str,
+                 object_inputs: list,
+                 params: dict):
+        self.model_type = model_type
+        self.obj_name = obj_name
+        self.object_inputs = object_inputs
+        self.params = params
+        self.schema = find_by_name(model_type)
+        assert self.schema is not None
+        self.file_path = self.schema['file_path']
+        self.file_id = self.schema['file_id']
+        self.file_type = self.schema['file_type']
+
+
+class ConnState(Enum):
+    DISCONNECTED = "disconnected"
+    CONNECTING = "connecting"
+    CONNECTED = "connected"
+    DISCONNECTING = "disconnecting"
+    ERROR = "error"
 
 
 class SceneTalkClient:
@@ -43,36 +139,16 @@ class SceneTalkClient:
         self.client = None
         self.websocket = None
         self.async_stack = None
-        self.connection_state = "disconnected"
+        self.connection_state = ConnState.DISCONNECTED
         self.last_error = None
-        self._task = None
-        # TODO: migrate to request context
-        self.current_object_schema = None
-        self.current_object_name = None
-        self.current_model_type = None
-        self.current_inputs = []
-
-    async def process_response(self, response: Any) -> bool:
-        """Generic SceneTalk response processor"""
-        op_type = response['op']
-        # logger.info(f"process_response: {op_type}")
-        if op_type == "error":
-            await self.event_queue.put(("error", response["data"]))
-        elif op_type == "geometry":
-            # TODO - decide on model or schema or job def language
-            await self.event_queue.put(("geometry",
-                                        self.current_model_type,
-                                        self.current_object_name or random_obj_name(),
-                                        self.current_inputs,
-                                        response,
-                                        self.current_object_schema))
-        completed = op_type == "automation" and \
-            response["data"] == "end"
-        return completed
+        self._client_task = None
+        self._shutdown_event = None
+        self._correlations = {}
 
     async def connect(self, endpoint) -> bool:
         """Connect to the SceneTalk WebSocket server."""
-        if self.connection_state == "connected" or self.connection_state == "connecting":
+        if self.connection_state ==ConnState.CONNECTED or \
+              self.connection_state == ConnState.CONNECTING:
             return
         
         self.last_error = None
@@ -91,29 +167,37 @@ class SceneTalkClient:
             self.async_stack = contextlib.AsyncExitStack()
             self.websocket = await self.async_stack.enter_async_context(
                 aconnect_ws(endpoint, self.client))
-            self.connection_state = "connected"
+            self.connection_state = ConnState.CONNECTED
             self.ws_url = endpoint
-            await self.event_queue.put(["connected", self.ws_url])
+            if self._client_task:
+                self._shutdown_event.set()
+                await self._client_task
+            
+            await self.event_queue.put([EventType.CONNECTED, self.ws_url])
+            self._shutdown_event = asyncio.Event()
+            self._client_task = asyncio.create_task(client_task(self))
+            
             return True
         
         except httpx.ConnectError as e:
             self.last_error = f"Connection error: {e}"
-            await self.event_queue.put(("error", self.last_error))
+            await self.event_queue.put((EventType.ERROR, self.last_error))
             await self.disconnect()
             return False
         except Exception as e:
             self.last_error = f"Connection failure: {e}"
-            await self.event_queue.put(("error", self.last_error))
+            await self.event_queue.put((EventType.ERROR, self.last_error))
             await self.disconnect()
             return False
 
-    async def disconnect(self):
+    async def disconnect(self, msg: str):
         """Disconnect from the WebSocket server."""
-        self.connection_state = "diconnecting"
+        self.connection_state = ConnState.DISCONNECTING
 
-        if self._task:
-            self._task.cancel()
-            self._task = None
+        if self._client_task:
+            self._shutdown_event.set()
+            self._client_task = None
+            self._shutdown_event = None
 
         if self.websocket:
             await self.websocket.close()
@@ -127,84 +211,72 @@ class SceneTalkClient:
             await self.client.aclose()
             self.client = None
 
-        self.connection_state = "disconnected"
-        await self.event_queue.put(["disconnected"])
+        self.connection_state = ConnState.DISCONNECTED
 
-    async def send_cook(self, model_type, obj_name, object_inputs, params):
+        await self.event_queue.put([EventType.DISCONNECTED, self.ws_url, msg or ""])
+
+    async def send_cook(self, req: CookRequest):
         """Send a cook message to the server."""
-        schema = find_by_name(model_type)
-        assert schema is not None
-        self.current_model_type = model_type
-        self.current_object_schema = schema
-        self.current_inputs = object_inputs
+        cid = str(uuid4())
+        # self._correlations[cid] = req
         
-        if not self.websocket or self.connection_state != "connected":
+        if not self.websocket or self.connection_state != ConnState.CONNECTED:
             logger.error("Cannot send message: not connected")
             return False
         try:
-            self.current_object_name = obj_name
             msg = {   
                 "op": "cook",
+                "cor": cid,
                 "data": {
                     "hda_path": {
                         "file_id": "file_local_hda",
-                        "file_path": self.current_object_schema['file_path']
+                        "file_path": req.schema['file_path']
                     },
                     "definition_index": 0,
                     "format": "raw",
-                    **params  # Unpack all parameters
+                    **req.params  # Unpack all parameters
                 }
             }
             json_message = json.dumps(msg)
             await self.websocket.send_text(json_message)
-            while True:
-                try:
-                    message = await asyncio.wait_for(
-                        self.websocket.receive_text(),
-                        timeout=30
-                    )
-                    response_data = json.loads(message)
-                    completed = await self.process_response(response_data)
-                    if completed:
-                        logger.info("Cook completed")
-                        return True
-                except asyncio.TimeoutError:
-                    logger.error("Read timeout while waiting for data")
-                except WebSocketNetworkError:
-                    logger.exception(f"WebSocket error")
-                    await self.disconnect()
-                    return False
-            return False
+            return True
         except httpx.WriteError as e:
             logger.error(f"Error sending message: {e}")
-            return False 
+            return False
+        
+    async def send_update(self, update: bytes) -> bool:
+        try:
+            msg = {
+                "op": "update",
+                "data": {
+                    "update": base64.b64encode(update).decode('utf-8')
+                }
+            }
+            json_message = json.dumps(msg)
+            await self.websocket.send_text(json_message)
+            return True
+        except httpx.WriteError as e:
+            logger.error(f"Error sending message: {e}")
+        return False
 
     async def send_message(self, 
                            message: Dict[str, Any]) -> bool:
         """Send a message to the server."""
-        if not self.websocket or self.connection_state != "connected":
+        if not self.websocket or self.connection_state != ConnState.CONNECTED:
             logger.error("Cannot send message: not connected")
             return False
         try:
             await self.websocket.send_text(json.dumps(message))
-            while True:
-                try:
-                    message = await asyncio.wait_for(
-                        self.websocket.receive_text(),
-                        timeout=30
-                    )
-                    response_data = json.loads(message)
-                    completed = await self.process_response(response_data)
-                    if completed:
-                        return True
-                except asyncio.TimeoutError:
-                    logger.error("Read timeout while waiting for data")
-            return False
+            return True
         except (httpx.WriteError, httpx.LocalProtocolError) as e:
             logger.error(f"Error sending message: {e}")
-            return False
+        return False
 
-    async def upload_file(self, file_id: str, file_path: str, content_type: str = "application/octet-stream") -> bool:
+    async def upload_file(
+            self,
+            file_id: str,
+            file_path: str,
+            content_type: str = "application/octet-stream") -> bool:
         """Upload a file to the server."""
         try:
             with open(file_path, "rb") as f:
@@ -219,8 +291,8 @@ class SceneTalkClient:
                     "content_base64": base64_content
                 }
             }
-
-            return await self.send_message(upload_message)
+            await self.send_message(upload_message)
+            return True
 
         except FileNotFoundError:
             logger.error(f"File not found: {file_path}")

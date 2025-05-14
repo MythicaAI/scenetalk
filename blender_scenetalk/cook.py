@@ -1,3 +1,4 @@
+from blender_scenetalk.scenetalk_client import CookRequest
 import bpy
 
 import json
@@ -166,13 +167,13 @@ def cook_internal(obj, params):
     all_params = {param_id: param["default"]
                 for param_id, param in default_params.items()}
     all_params.update(params)
-
-    run_async_bg(
-        client.send_cook(
-            model_type,
-            obj.name,
-            object_inputs,
-            all_params))
+    req = CookRequest(
+            model_type=model_type,
+            obj_name=obj.name,
+            object_inputs=object_inputs,
+            params=params
+        )
+    run_async_bg(client.send_cook(req))
     
 
 def update_float_value(self, context):

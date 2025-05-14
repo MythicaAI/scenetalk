@@ -45,10 +45,7 @@ def connect_to_server(endpoint):
 
 def disconnect_from_server():
     """Disconnect from the Houdini server."""
-    client = get_client()
-    
-    async def disconnect_task():
-        await client.disconnect()
-    
-    run_async_bg(disconnect_task())
+    client = get_client()    
+    if client:
+        run_async_bg(client.disconnect(msg="disconnect_from_server"))
     return True
