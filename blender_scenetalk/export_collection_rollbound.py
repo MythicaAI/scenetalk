@@ -1,40 +1,37 @@
 import bpy
+from .export_mesh_simple import export_mesh_simple
 
 def export_collection_rollbound():
     """
     """
-    exported_count = 0
+    print("Attempting to export collection to scenetalk...")
     
     # Loop through all collections in the scene
     for collection in bpy.data.collections:
         # Check if this collection is marked for export
         export_enabled = collection.get("export_scenetalk", False)
-        
+
         if not export_enabled:
             #print(f"Skipping collection (export disabled): {collection.name}")
             continue
-            
+
         # Skip empty collections
         if not collection.objects:
             print(f"Skipping empty collection: {collection.name}")
             continue
-        
-        # Create filename using only the collection name
-        safe_collection_name = "".join(c for c in collection.name if c.isalnum() or c in (' ', '-', '_')).rstrip()
-        
+                
+        print(f"exporting collection: {collection.name}")
 
-        # Export selected objects as GLTF
-        try:
-            print("exporting colllection to scenetalk...")
-            for obj in collection.objects:
-                print("exporting object: ", obj.name)
-            # bpy.ops.export_scene.gltf(
-            #     filepath=filepath,
-            #     use_selection=True,  # Only export selected objects
-            #     export_apply=True    # Apply modifiers before export
-            # )
-            # print(f"Exported collection '{collection.name}' to: {filepath}")
-            exported_count += 1
+        # Serialize objects to geometry
+        geometry = {}
+        for obj in collection.objects:
+            if obj.type != 'MESH':
+                continue
             
-        except Exception as e:
-            print(f"Failed to export collection '{collection.name}': {str(e)}")
+            geometry[obj.name] = export_mesh_simple(obj.name, obj)
+
+        print(f"geometry: {geometry}")
+
+        # Send geometry to scenetalk
+
+
