@@ -34,13 +34,12 @@ def get_connection_state():
 
 def connect_to_server(endpoint):
     """Connect to the Houdini server."""
-    async def connect_task():
-        client = get_client()
-        if not client:
-            logger.error("Client not initialized")
-            return False
-        await client.connect(endpoint)
-    run_async_bg(connect_task())
+    
+    client = get_client()
+    if not client:
+        logger.error("Client not initialized")
+        return
+    run_async_bg(client.connect(endpoint))
     return True
 
 def disconnect_from_server():
