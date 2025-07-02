@@ -22,6 +22,7 @@ from .operators import connection_operators, object_operators
 from .panels.scene_panel import refresh_connection_panel
 from . import properties
 from . import scenetalk_sync
+from . import scenetalk_host
 
 logger = logging.getLogger("extension.__init__")
 _event_queue = None
@@ -48,6 +49,7 @@ def register():
     scene_panel.register()
     object_panel.register()
     scenetalk_sync.register()
+    scenetalk_host.register()
     
     _event_queue = asyncio.Queue()
     init_client(_event_queue)
@@ -90,13 +92,15 @@ def unregister():
     global _event_queue
     _event_queue.put_nowait([EventType])
     stop_event_loop()
-   
+
+    scenetalk_host.unregister()
     scenetalk_sync.unregister()
     scene_panel.unregister()
     object_panel.unregister()
     object_operators.unregister()
     connection_operators.unregister()
     properties.unregister()
+    
     
 
 if __name__ == "__main__":
