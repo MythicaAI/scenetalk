@@ -26,6 +26,13 @@ class SCENETALK_PT_ConnectionPanel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         props = context.scene.scenetalk_props
+
+        # Create a button to toggle scene talk collection export
+        box = layout.box()
+        row = box.row()
+        row.label(text="SceneTalk Collection Export:")
+        row.scale_x = 1.5  # Make button bigger
+        row.operator("scenetalk.toggle_collection_export", text="Toggle Export", icon='EXPORT')
         
         # Connection endpoint
         box = layout.box()

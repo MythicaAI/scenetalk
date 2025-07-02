@@ -18,11 +18,12 @@ from .event_types import EventType
 from .async_wrap import stop_event_loop
 
 from .panels import object_panel, scene_panel
-from .operators import connection_operators, object_operators
+from .operators import connection_operators, object_operators, collection_operators
 from .panels.scene_panel import refresh_connection_panel
 from . import properties
 from . import scenetalk_sync
 from . import scenetalk_host
+from . import scenetalk_rollbound_sync
 
 logger = logging.getLogger("extension.__init__")
 _event_queue = None
@@ -39,6 +40,8 @@ bl_info = {
     "category": "Object",
 }
 
+def post_register_init():
+    bpy.ops.object.track_changes_rollbound('INVOKE_DEFAULT')
 
 def register():
     global _event_queue
@@ -46,9 +49,11 @@ def register():
     properties.register()
     connection_operators.register()
     object_operators.register()
+    collection_operators.register()
     scene_panel.register()
     object_panel.register()
     scenetalk_sync.register()
+    scenetalk_rollbound_sync.register()
     scenetalk_host.register()
     
     _event_queue = asyncio.Queue()
@@ -71,8 +76,8 @@ def register():
             elif event_type == EventType.CONNECTED:
                 logger.info("Connected to %s", ev[1])
                 refresh_connection_panel()
-                # enable object tracking
-                bpy.ops.object.track_changes('INVOKE_DEFAULT')
+                # enable object tracking TODO-jrepp re-enable
+                # bpy.ops.object.track_changes('INVOKE_DEFAULT')
             elif event_type == EventType.DISCONNECTED:
                 logger.info("Disconnected")
                 refresh_connection_panel()
@@ -87,6 +92,10 @@ def register():
     
     bpy.app.timers.register(process_queue)
 
+    # Execute after 0.1 seconds, this ensures this function is called
+    # after all registerations are complete on the next event loop
+    bpy.app.timers.register(post_register_init, first_interval=0.1)
+
 
 def unregister():
     global _event_queue
@@ -95,8 +104,10 @@ def unregister():
 
     scenetalk_host.unregister()
     scenetalk_sync.unregister()
+    scenetalk_rollbound_sync.unregister()
     scene_panel.unregister()
     object_panel.unregister()
+    collection_operators.unregister()
     object_operators.unregister()
     connection_operators.unregister()
     properties.unregister()
