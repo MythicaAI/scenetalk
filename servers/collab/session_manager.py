@@ -1,53 +1,17 @@
 # Session data models
 import asyncio
 import logging
-from datetime import datetime, time, timedelta, timezone
-from typing import Any, Awaitable, Callable, Coroutine, Dict, Optional, Set
+from datetime import timedelta
+from typing import Any, Dict, Optional
 from uuid import uuid4
-from pycrdt import Doc
+from pycrdt import Doc, Map, Array
 
-from pydantic import BaseModel
-
+from client import Client
+from session import Session
+from teimstamp import timestamp
 
 log = logging.getLogger(__name__)
 
-
-def timestamp() -> datetime:
-    return datetime.now(timezone.utc)
-
-class Client:
-    def __init__(self, id, send_to_client):
-        self.id = id
-        self.send = send_to_client
-        self.last_active: datetime = timestamp()
-
-    def __hash__(self):
-        return hash(self.id)
-
-    def __eq__(self, other):
-        return self.id == other.id
-
-class SessionResponse(BaseModel):
-    id: str
-    created_at: datetime
-    last_active: datetime
-    data: Dict[str, Any] = {}
-
-class Session:
-    def __init__(self, id: str):
-        self.id = id
-        self.created_at = timestamp()
-        self.last_active = timestamp()
-        self.data: Dict[str, any] = {}
-        self.clients: Set[Client] = set()
-        self.doc: Doc = Doc()
-
-    def response(self):
-        return SessionResponse(
-            id=self.id,
-            created_at=self.created_at,
-            last_active=self.last_active,
-            data=self.data)
 
 class SessionManager:
     def __init__(self, session_timeout: timedelta = None):
@@ -99,33 +63,33 @@ class SessionManager:
             session.last_active = timestamp()
         return session
 
-    def register_client(self, client_id: str, session_id: str, send_to_client: Callable[[object], Awaitable[None]]) -> bool:
+    def register_client(self, client: Client, session_id: str) -> Session | None:
         """Associate a client with a session"""
         if session_id not in self.sessions:
-            return False
-        client = Client(client_id, send_to_client)
+            session_id = self.create_session(session_id)
 
         # Remove client from any previous session
-        prev_session_id = self.client_to_session.get(client_id)
+        prev_session_id = self.client_to_session.get(client.id)
         if prev_session_id and prev_session_id in self.sessions:
             self.sessions[prev_session_id].clients.discard(client)
 
         # Add to new session
-        self.sessions[session_id].clients.add(client)
-        self.client_to_session[client_id] = session_id
-        self.sessions[session_id].last_active = timestamp()
-        log.info(f"Client: %s joined session %s", client_id, session_id)
-        return True
+        session = self.sessions[session_id]
+        session.last_active = timestamp()
+        session.clients.add(client)
+        self.client_to_session[client.id] = session_id
+        log.info(f"Client: %s joined session %s", client.id, session_id)
+        return session
 
-    def unregister_client(self, client_id: str) -> Optional[str]:
+    def unregister_client(self, client: Client) -> bool:
         """Remove a client from its session"""
-        session_id = self.client_to_session.pop(client_id, None)
+        session_id = self.client_to_session.pop(client.id, None)
         if session_id and session_id in self.sessions:
-            self.sessions[session_id].clients.discard(Client(client_id, None))
+            self.sessions[session_id].clients.discard(client)
             self.sessions[session_id].last_active = timestamp()
             log.info(f"Client left session", extra={"session_id": session_id})
-            return session_id
-        return None
+            return True
+        return False
 
     def get_session_by_client(self, client_id: str) -> Optional[Session]:
         """Get a client's session"""
@@ -147,12 +111,5 @@ class SessionManager:
         session.data[key] = value
         return True
 
-    async def broadcast_to_session(self, session_id: str, message: Any, exclude_client: Optional[str] = None):
-        """Queue a message to be broadcast to all clients in a session"""
-        session = self.get_session(session_id)
-        if not session:
-            return
-        exclude = Client(exclude_client, None)
-        clients = session.clients - {exclude}
-        await asyncio.gather(*[c.send(message) for c in clients])
+
 
