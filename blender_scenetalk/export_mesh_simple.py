@@ -1,4 +1,5 @@
 import bmesh
+import bpy
 
 def export_mesh_simple(name, mesh_obj) -> object:
     # Ensure the object is a mesh
@@ -6,8 +7,10 @@ def export_mesh_simple(name, mesh_obj) -> object:
         print(f"Error: {mesh_obj.name} is not a mesh object.")
         return False
     
-    # Get mesh data
-    mesh = mesh_obj.data
+    # Get the evaluated mesh data (includes modifiers like geometry nodes)
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    evaluated_obj = mesh_obj.evaluated_get(depsgraph)
+    mesh = evaluated_obj.data
     
     # Create bmesh for easier access to data
     bm = bmesh.new()
