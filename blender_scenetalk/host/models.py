@@ -20,6 +20,19 @@ class Geometry(BaseModel):
     uvs: list[Vector2]
     color: list[Vector3]
 
+
+class GeometryFlat(BaseModel):
+    points: list[float]
+    normals: list[float]
+    uvs: list[float]
+    colors: list[float]
+    indices: list[int]
+
+
+class GeometrySet(BaseModel):
+    geometry: Dict[str, "GeometryFlat"]
+
+
 class Cook(BaseModel):
     params: dict[str, Any]
 

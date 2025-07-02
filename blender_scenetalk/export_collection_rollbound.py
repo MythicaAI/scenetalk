@@ -1,6 +1,10 @@
 import bpy
 from .export_mesh_simple import export_mesh_simple
 
+from .host.app import session_manager
+from .host.models import GeometrySet
+from .host.ops import Ops
+
 def export_collection_rollbound():
     """
     """
@@ -23,15 +27,19 @@ def export_collection_rollbound():
         print(f"exporting collection: {collection.name}")
 
         # Serialize objects to geometry
-        geometry = {}
+        geometry = GeometrySet(geometry={})
         for obj in collection.objects:
             if obj.type != 'MESH':
                 continue
+
+            geometry.geometry[obj.name] = export_mesh_simple(obj.name, obj)
+
+        # Send geometry to clients
+        geometry_op = {
+            "op": Ops.GEOMETRY.value,
+            "data": geometry
+        }
+        for [_,session] in session_manager.sessions.items():
+            print(f"sending geometry to {session.id}")
+            session.broadcast(geometry_op)
             
-            geometry[obj.name] = export_mesh_simple(obj.name, obj)
-
-        print(f"geometry: {geometry}")
-
-        # Send geometry to scenetalk
-
-
