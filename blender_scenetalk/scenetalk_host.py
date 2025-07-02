@@ -15,7 +15,7 @@ def run_server():
     # Run the FastAPI server
     log.info("Starting FastAPI server on http://localhost:8765")
     uvicorn.run(
-        "host.app:app",
+        app,
         host="localhost",
         port=8765,
         log_level="info",
@@ -24,19 +24,11 @@ def run_server():
 
 def register():
     global server_thread
+    if server_thread is not None and server_thread.is_alive():
+        log.info("FastAPI server is already running.")
+        return
     server_thread = threading.Thread(target=run_server, daemon=True)
     server_thread.start()
-     
-
 
 def unregister():
-    global server_thread
-    if server_thread and server_thread.is_alive():
-        log.info("Stopping FastAPI server...")
-        # Note: Uvicorn does not provide a direct way to stop the server gracefully.
-        # This is a workaround to ensure the thread stops.
-        server_thread.join(timeout=1)
-        log.info("FastAPI server stopped.")
-    else:
-        log.info("No FastAPI server running to stop.")
-    server_thread = None
+    log.info("Unregistering host module, server will continue running.")

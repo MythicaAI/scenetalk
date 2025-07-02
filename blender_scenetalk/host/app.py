@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 
 router = APIRouter()
 app = FastAPI()
-app.include_router(router)
+
 
 # Create the session manager
 session_manager = SessionManager()
@@ -48,6 +48,11 @@ async def get_cache_tex(
 async def get_cache_mat(
         session_id: Optional[str] = Depends(get_session_id)) -> CacheKeyList:
     return CacheKeyList()
+
+@router.get("/hello")
+async def hello_world() -> str:
+    return "Hello, World!"
+
 
 @router.websocket("/ws")
 async def websocket_endpoint(
@@ -115,3 +120,6 @@ async def websocket_endpoint(
             await websocket.close()
     finally:
         session_manager.unregister_client(client)
+
+app.include_router(router)
+print(f"bound rounter {router} to {app}")
