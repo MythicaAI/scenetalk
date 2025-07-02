@@ -100,7 +100,7 @@ async def websocket_endpoint(
                     group, op_name = parts
                 else:
                     group = 'core'
-                    op_name = parts[0]
+                    op_name = op
 
                 # look up operator
                 op_group = OpGroup.find(group)
@@ -110,8 +110,8 @@ async def websocket_endpoint(
                 op = op_group.ops.get(op_name)
                 if not op:
                     log.warning("unknown op: %s, in group: %s",
-                                op, group)
-                    raise HTTPException(400, f"unknown op: {op} in group: {group}")
+                                op_name, group)
+                    raise HTTPException(400, f"unknown op: {op_name} in group: {group} {op_group.ops.keys()}")
             except json.JSONDecodeError as e:
                 print(f"JSON error {e}")
     except Exception as e:

@@ -6,12 +6,13 @@ from pydantic import BaseModel
 
 class Ops(Enum):
     COOK = "cook"
+    PING_PONG = "ping_pong"
     GEOMETRY = "geometry"
     SYNC_UPDATE = "sync/update"
     SYNC_STATE = "sync/state"
     SESSION_INFO = "session/info"
     SESSION_JOIN = "session/join"
-
+    
 
 # Pydantic model for message validation
 class OperatorMessage(BaseModel):
@@ -69,7 +70,7 @@ class OpGroup:
         """
 
         def decorator(func):
-            inferred_name = name or func.__name__
+            inferred_name = name.value or func.__name__
             annotations = func.__annotations__
 
             msg_type = type(annotations.get('msg'))

@@ -3,6 +3,9 @@ from datetime import datetime
 from pydantic import BaseModel
 from typing import Any, Dict
 
+class PingPong(BaseModel):
+    timestamp: int
+
 class Vector2(BaseModel):
     xy: tuple[float, float]
 
