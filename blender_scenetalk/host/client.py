@@ -12,7 +12,7 @@ class Client:
     def __init__(self, websocket, id, send_to_client: OpCall):
         self.websocket = websocket
         self.id = id
-        self.send = send_to_client
+        self.send_to_client = send_to_client
         self.last_active: datetime = timestamp()
         self.authenticated = False
 
@@ -29,7 +29,7 @@ class Client:
         doc.get_update(state=self.checkpoint)
 
     async def send(self, op: Ops, data: BaseModel):
-       await self.send(
+       await self.send_to_client(
            {
                'op': str(op),
                'data': data.model_dump(mode='json')
