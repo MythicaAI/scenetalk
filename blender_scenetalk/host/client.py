@@ -29,8 +29,4 @@ class Client:
         doc.get_update(state=self.checkpoint)
 
     async def send(self, op: Ops, data: BaseModel):
-       await self.send_to_client(
-           {
-               'op': str(op),
-               'data': data.model_dump(mode='json')
-           })
+       await self.send_to_client(op, data)

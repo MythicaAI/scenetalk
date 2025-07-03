@@ -1,4 +1,5 @@
 import bpy
+from .async_wrap import run_async_bg
 from .export_mesh_simple import export_mesh_simple
 
 from .host.app import session_manager
@@ -9,7 +10,7 @@ def export_collection_rollbound():
     """
     """
     print("Attempting to export collection to scenetalk...")
-    
+
     # Loop through all collections in the scene
     for collection in bpy.data.collections:
         # Check if this collection is marked for export
@@ -41,5 +42,5 @@ def export_collection_rollbound():
         }
         for [_,session] in session_manager.sessions.items():
             print(f"sending geometry to {session.id}")
-            session.broadcast(geometry_op)
+            run_async_bg(session.broadcast(geometry_op)) 
             
