@@ -65,7 +65,7 @@ async def websocket_endpoint(
     async def send_to_client(op: Ops, data: BaseModel) -> None:
         close = None
         try:
-            msg = { "op": str(op), "data": data.model_dump(mode='json')}
+            msg = { "op": op.value, "data": data.model_dump(mode='json')}
             text = json.dumps(msg)
             await websocket.send_text(text)
         except Exception as e:

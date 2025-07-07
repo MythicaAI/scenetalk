@@ -9,7 +9,7 @@ from .host.ops import Ops
 
 
 class GeometryOp(BaseModel):
-    op: Ops = Ops.GEOMETRY.value,
+    op: Ops = Ops.GEOMETRY
     data: GeometrySet
 
 
