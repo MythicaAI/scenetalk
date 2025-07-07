@@ -40,7 +40,7 @@ class Session:
     async def broadcast(self, msg: BaseModel, exclude: Optional[Client] = None):
         """Queue a message to be broadcast to all clients in a session"""
         clients = self.clients - {exclude}
-        await asyncio.gather(*[c.send(msg.model_dump()) for c in clients])
+        await asyncio.gather(*[c.send(msg.op, msg.data) for c in clients])
 
     def build_info(self, client_id: str) -> SessionInfo:
         self.checkpoint = self.doc.get_state()
