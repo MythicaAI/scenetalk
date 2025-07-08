@@ -1,22 +1,23 @@
-from blender_scenetalk.async_wrap import run_async_bg
-from blender_scenetalk.scenetalk_connection import get_client
 import bpy
 from bpy.app.handlers import persistent
-from .scenetalk_state import doc, scene, observe_changes
-from .scenetalk_connection import get_client
-from .export_collection_rollbound import export_collection_rollbound
+from blender_scenetalk.async_wrap import run_async_bg
+import hashlib
+import json
+from pydantic import BaseModel
+
+from .host.app import session_manager
+from .host.models import GeometrySet
+from .host.ops import Ops
+from .export_mesh_scenetalk import export_mesh_scenetalk
 
 STATE_HASH_KEY = "scenetalk_hash"
-SYNC_DELAY = 0.5
+SYNC_DELAY = 5.0
 
 
+class GeometryOp(BaseModel):
+    op: Ops = Ops.GEOMETRY
+    data: GeometrySet
 
-def send_verts(vert_hash, obj):
-    client = get_client()
-    if client:
-        # data = export_mesh_simple(vert_hash, obj)
-        # run_async_bg(client.send_mesh(data))
-        pass
 
 class OBJECT_OT_track_changes_rollbound(bpy.types.Operator):
     """Track changes to objects in real-time"""
@@ -38,7 +39,37 @@ class OBJECT_OT_track_changes_rollbound(bpy.types.Operator):
     
     def capture_object_data(self, context):
         """Capture current state of objects"""
-        export_collection_rollbound()
+
+        # Gather all changed geometry from all collections
+        geometry = GeometrySet(geometry={})
+
+        for collection in bpy.data.collections:
+            export_enabled = collection.get("export_scenetalk", False)
+
+            if not export_enabled or not collection.objects:
+                continue
+
+            # Serialize objects to geometry
+            for obj in collection.objects:
+                if obj.type != 'MESH':
+                    continue
+
+                object_geometry = export_mesh_scenetalk(obj.name, obj)
+                hash = hashlib.sha1(json.dumps(object_geometry.model_dump()).encode("utf-8")).digest().hex()
+
+                if hash == obj.get(STATE_HASH_KEY, None):
+                    continue
+
+                obj[STATE_HASH_KEY] = hash
+                geometry.geometry.update(object_geometry.geometry)
+
+        # Send geometry to clients
+        if (len(geometry.geometry) > 0):
+            geometry_op = GeometryOp(data=geometry)
+            for [_,session] in session_manager.sessions.items():
+                print(f"Syncing geometry to session {session.id}")
+                run_async_bg(session.broadcast(geometry_op)) 
+
 
     def invoke(self, context, event):
         self.is_tracking = True
