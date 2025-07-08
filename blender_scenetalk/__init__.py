@@ -40,8 +40,6 @@ bl_info = {
     "category": "Object",
 }
 
-def post_register_init():
-    bpy.ops.object.track_changes_rollbound('INVOKE_DEFAULT')
 
 def register():
     global _event_queue
@@ -91,10 +89,6 @@ def register():
         return 0.1
     
     bpy.app.timers.register(process_queue)
-
-    # Execute after 0.1 seconds, this ensures this function is called
-    # after all registerations are complete on the next event loop
-    bpy.app.timers.register(post_register_init, first_interval=0.1)
 
 
 def unregister():

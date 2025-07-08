@@ -1,6 +1,7 @@
 from blender_scenetalk.async_wrap import run_async_bg
 from blender_scenetalk.scenetalk_connection import get_client
 import bpy
+from bpy.app.handlers import persistent
 from .scenetalk_state import doc, scene, observe_changes
 from .scenetalk_connection import get_client
 from .export_collection_rollbound import export_collection_rollbound
@@ -51,7 +52,6 @@ class OBJECT_OT_track_changes_rollbound(bpy.types.Operator):
         wm = context.window_manager
         wm.event_timer_remove(self._timer)
         self.is_tracking = False
-        print("Tracking stopped")
     
     @classmethod
     def stop_tracking(cls):
@@ -60,8 +60,15 @@ class OBJECT_OT_track_changes_rollbound(bpy.types.Operator):
 
 
 # Registration
+
+@persistent
+def _rollbound_after_load(_dummy):
+    bpy.ops.object.track_changes_rollbound('INVOKE_DEFAULT')
+
 def register():
     bpy.utils.register_class(OBJECT_OT_track_changes_rollbound)
+    bpy.app.handlers.load_post.append(_rollbound_after_load)
 
 def unregister():
+    bpy.app.handlers.load_post.remove(_rollbound_after_load)
     bpy.utils.unregister_class(OBJECT_OT_track_changes_rollbound)
