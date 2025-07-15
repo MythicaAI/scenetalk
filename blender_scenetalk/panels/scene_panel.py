@@ -5,8 +5,8 @@ from bpy.app.handlers import persistent
 
 
 # Import the SceneTalk client
-from ..scenetalk_client import SceneTalkClient
-from ..scenetalk_connection import get_connection_state, connect_to_server, disconnect_from_server
+from ..scenetalk_client import SceneTalkClient, ConnState
+from ..scenetalk_connection import get_client, get_connection_state, connect_to_server, disconnect_from_server
 from ..properties.scenetalk_properties import SceneTalkProperties
 
 from ..properties import models
@@ -26,6 +26,13 @@ class SCENETALK_PT_ConnectionPanel(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         props = context.scene.scenetalk_props
+
+        # Create a button to toggle scene talk collection export
+        box = layout.box()
+        row = box.row()
+        row.label(text="SceneTalk Collection Export:")
+        row.scale_x = 1.5  # Make button bigger
+        row.operator("scenetalk.toggle_collection_export", text="Toggle Export", icon='EXPORT')
         
         # Connection endpoint
         box = layout.box()
@@ -35,17 +42,16 @@ class SCENETALK_PT_ConnectionPanel(bpy.types.Panel):
         row.prop(props, "show_connection_settings", 
                  icon="TRIA_DOWN" if props.show_connection_settings else "TRIA_RIGHT",
                  icon_only=True, emboss=False)
-       
-        state = get_connection_state()
-        if state == "connected":
+        client = get_client()
+        state = client.connection_state if client else ConnState.DISCONNECTED
+        if state == ConnState.CONNECTED:
             row.label(text="Connected", icon='CHECKMARK')
-        elif state == "connecting":
+        elif state == ConnState.CONNECTING:
             row.label(text="Connecting...", icon='SORTTIME')
-        elif state == "disconnecting":
+        elif state == ConnState.DISCONNECTING:
             row.label(text="Disconnecting...", icon='SORTTIME')
-        elif state.startswith("error"):
-            error_msg = state.split(":", 1)[1] if ":" in state else "Unknown error"
-            row.label(text=f"Error: {error_msg}", icon='ERROR')
+        elif state == ConnState.ERROR:
+            row.label(text=f"Error: {client.last_error}", icon='ERROR')
         else:
             row.label(text="Disconnected", icon='X')
         
@@ -210,7 +216,7 @@ def register():
 
 def unregister():
     # Ensure disconnection
-    if get_connection_state() == "connected":
+    if get_connection_state() == ConnState.CONNECTED:
         disconnect_from_server()
 
     # Remove selection change handler

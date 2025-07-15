@@ -10,7 +10,7 @@ from ..build_object import create_object
 
 from ..cook import cook
 from ..async_wrap import run_async_bg
-from ..scenetalk_client import random_obj_name
+from ..scenetalk_client import random_obj_name, ConnState
 from ..scenetalk_connection import get_connection_state, get_client
 from ..model_db import find_by_name
 from ..properties.models import get_model_props
@@ -151,7 +151,7 @@ class GEN_OT_Process(bpy.types.Operator):
     def poll(cls, context):
         # Only enable if connected and object has model_type and connected to backend
         obj = context.object
-        is_connected = get_connection_state() == "connected"
+        is_connected = get_connection_state() == ConnState.CONNECTED
         return obj.get("model_type", None) and is_connected
 
     def execute(self, context):

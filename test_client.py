@@ -36,7 +36,6 @@ class HoudiniWorker:
         return False
 
     async def _connect(self):
-        log.info("Connecting to worker")
         self.client = AsyncClient()
         try:
             log.info(f"Connecting to localhost:{self.port}")

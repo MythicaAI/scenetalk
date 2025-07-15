@@ -2,7 +2,7 @@ import bpy
 from bpy.props import StringProperty, BoolProperty
 
 from ..scenetalk_connection import connect_to_server, disconnect_from_server, get_client, get_connection_state
-
+from ..scenetalk_client import ConnState
 
 # Connect operator
 class SCENETALK_OT_Connect(bpy.types.Operator):
@@ -20,14 +20,18 @@ class SCENETALK_OT_Connect(bpy.types.Operator):
                 return {'CANCELLED'}
             
             state = client.connection_state
-            if state == "connecting":
+            if state == ConnState.CONNECTING:
                 return {'RUNNING_MODAL'}
-            elif state == "connected":
-                self.report({'INFO'}, "Connected")
+            elif state == ConnState.DISCONNECTING:
+                return {'RUNNING_MODAL'}
+            elif state == ConnState.CONNECTED:
+                self.report({'INFO'}, f"Connected to {client.ws_url}")
                 return {'FINISHED'}
-            elif state == "error" or state == "disconnected":
-                self.report({'ERROR'}, f"{client.last_error}")
+            elif state == ConnState.ERROR or state == ConnState.DISCONNECTED:
+                error_msg = client.last_error or "Disconnected"
+                self.report({'ERROR'}, error_msg)
                 return {'CANCELLED'}
+
             self.report({'ERROR'}, f"Unknown client state: {state}")
             return {'CANCELLED'}
         return {'PASS_THROUGH'}  # Let other events through
@@ -37,8 +41,8 @@ class SCENETALK_OT_Connect(bpy.types.Operator):
         context.window_manager.modal_handler_add(self)
 
         endpoint = context.scene.scenetalk_props.endpoint
-        connect_to_server(endpoint)
         self.report({'INFO'}, f"Connecting to {endpoint}")
+        connect_to_server(endpoint)
         return {'RUNNING_MODAL'}    
 
 # Disconnect operator

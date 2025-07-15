@@ -1,2 +1,5 @@
 httpx
 httpx-ws
+pycrdt
+uvicorn
+fastapi
